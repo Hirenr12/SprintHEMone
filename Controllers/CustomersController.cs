@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using SprintHEMone.Models;
 using System.Security.Cryptography;
+using System.Collections.Concurrent;
 
 namespace SprintHEMone.Controllers
 {
@@ -20,10 +21,85 @@ namespace SprintHEMone.Controllers
             _context = context;
         }
 
-        // GET: Customers
-        public async Task<IActionResult> Index()
+        public sealed class LoginLogger
         {
-            return View(await _context.Customers.ToListAsync());
+            private static readonly LoginLogger instance = new LoginLogger();
+            private static readonly object padlock = new object();
+            private readonly string filePath = "login_attempts.txt";
+            private ConcurrentDictionary<string, int> loginAttempts;
+
+            private LoginLogger()
+            {
+                loginAttempts = new ConcurrentDictionary<string, int>();
+            }
+
+            public static LoginLogger Instance
+            {
+                get { return instance; }
+            }
+
+            public void LogFailedLoginAttempt(string username)
+            {
+                lock (padlock)
+                {
+                    loginAttempts.AddOrUpdate(username, 1, (key, oldValue) => oldValue + 1);
+                    try
+                    {
+                        using (StreamWriter writer = System.IO.File.AppendText(filePath))
+                        {
+                            writer.WriteLine($"{DateTime.Now}: Failed login attempt for user '{username}'. Attempts: {loginAttempts[username]}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // You can handle the exception as per your application's requirements
+                        // For simplicity, just rethrowing it here
+                        throw ex;
+                    }
+                }
+            }
+        }
+
+        // GET: Customers
+        [HttpPost]
+        [ValidateAntiForgeryToken] // Add anti-forgery token for security
+        public async Task<IActionResult> Login(Customer model)
+        {
+            if (ModelState.IsValid)
+            {
+                // Retrieve the user from the database based on the provided username
+                var user = _context.Customers.SingleOrDefault(u => u.Email == model.Email);
+
+                if (user != null && !string.IsNullOrEmpty(model.PasswordHash))
+                {
+                    // Hash the provided password for comparison with the hashed password stored in the database
+                    using (SHA256 sha256Hash = SHA256.Create())
+                    {
+                        byte[] bytes = sha256Hash.ComputeHash(Encoding.UTF8.GetBytes(model.PasswordHash));
+                        string hashedPassword = Convert.ToBase64String(bytes);
+
+                        // Check if the hashed password matches the one stored in the database
+                        if (user.PasswordHash == hashedPassword)
+                        {
+                            // Authentication successful
+                            HttpContext.Response.Cookies.Append("Username", model.Email);
+                            return RedirectToAction("Index", "Items");
+                        }
+                    }
+                }
+            }
+
+            //Logging
+            LoginLogger.Instance.LogFailedLoginAttempt(model.Email);
+
+            // Authentication failed
+            ModelState.AddModelError(string.Empty, "Invalid username or password");
+
+            // Pass error message to error view
+            TempData["ErrorMessage"] = "Invalid username or password";
+
+            // Redirect to the login view with the error message
+            return RedirectToAction("Index"); // Assuming your login view is named "Login
         }
 
         // GET: Customers/Details/5
