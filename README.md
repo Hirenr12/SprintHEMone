@@ -44,7 +44,7 @@ To set up the SprintOne application locally, follow these steps:
 
 ## Contributors
 - [Hiren Thulasaie](https://github.com/Hirenr12)
-- [Ethan Swanepoel](https://github.com/EthanSwanepoel)
+- [Ethan Swanepoel](https://github.com/Ethan-Swanepoel)
 - [Mishka Dewlok](https://github.com/MishkaDewlok)
 
 ## License
